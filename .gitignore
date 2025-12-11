@@ -1,0 +1,46 @@
+# Build directories
+backend_cpp/build/
+backend_cpp/CMakeFiles/
+backend_cpp/cmake-build-*/
+
+# Database
+backend_cpp/transport.db
+backend_cpp/*.db
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+

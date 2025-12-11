@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Routes - Transport Schedule Management{% endblock %}
+
+{% block content %}
+<h2>Transport Routes</h2>
+
+<div id="routesContainer">
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let stops = [];
+let routes = [];
+
+function loadData() {
+    Promise.all([
+        fetch('/api/stops').then(r => r.json()),
+        fetch('/api/routes').then(r => r.json())
+    ]).then(([stopsData, routesData]) => {
+        stops = stopsData;
+        routes = routesData;
+        renderRoutes();
+    }).catch(error => {
+        console.error('Error loading data:', error);
+        document.getElementById('routesContainer').innerHTML = 
+            '<div class="alert alert-danger">Error loading routes</div>';
+    });
+}
+
+function renderRoutes() {
+    const container = document.getElementById('routesContainer');
+    
+    if (routes.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">No routes available</div>';
+        return;
+    }
+    
+    let html = '<div class="row">';
+    
+    routes.forEach(route => {
+        const routeStops = route.stop_ids.map(id => {
+            const stop = stops.find(s => s.id === id);
+            return stop ? stop.name : `Stop ${id}`;
+        });
+        
+        const typeBadge = route.type === 'bus' ? 'primary' :
+                         route.type === 'tram' ? 'success' : 'warning';
+        const typeIcon = route.type === 'bus' ? '🚌' :
+                        route.type === 'tram' ? '🚊' : '🚎';
+        
+        html += `
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header bg-${typeBadge} text-white">
+                        <h5 class="mb-0">${typeIcon} ${route.name}</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Type:</strong> <span class="badge bg-${typeBadge}">${route.type}</span></p>
+                        <p><strong>Stops (${routeStops.length}):</strong></p>
+                        <ol>
+                            ${routeStops.map(stop => `<li>${stop}</li>`).join('')}
+                        </ol>
+                        <p class="text-muted"><small>Route ID: ${route.id}</small></p>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', loadData);
+</script>
+{% endblock %}
+

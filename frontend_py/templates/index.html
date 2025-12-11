@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Map - Transport Schedule Management{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2>Live Transport Map</h2>
+        <div class="mb-3 d-flex gap-2">
+    <button class="btn btn-primary" onclick="filterVehicles('all')">Всі</button>
+    <button class="btn btn-success" onclick="filterVehicles('bus')">Автобуси 🚌</button>
+    <button class="btn btn-warning" onclick="filterVehicles('tram')">Трамваї 🚊</button>
+    <button class="btn btn-info" onclick="filterVehicles('trolleybus')">Тролейбуси 🚎</button>
+</div>
+        <div id="map" style="height: 600px; width: 100%; border: 1px solid #ccc; border-radius: 8px;"></div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Legend</h5>
+                <div class="d-flex gap-3">
+                    <span><span class="badge bg-primary">🚌</span> Bus</span>
+                    <span><span class="badge bg-success">🚊</span> Tram</span>
+                    <span><span class="badge bg-warning">🚎</span> Trolleybus</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="stopModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="stopModalTitle">Stop Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="stopModalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                <button class="btn btn-primary" id="showScheduleBtn">Показати повний розклад</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// === CONSTANTS ===
+const LVIV_LAT = 49.8397;
+const LVIV_LON = 24.0297;
+const SCALE = 0.005;
+
+// Convert fake model coords → real approx map coords
+function convertCoord(x, y) {
+    return [
+        LVIV_LAT + (y - 50) * SCALE,
+        LVIV_LON + (x - 50) * SCALE
+    ];
+}
+
+let map;
+let stops = [];
+let routes = [];
+let stopMarkers = {};
+let vehicleMarkers = {};
+let currentStopInfo = null;
+
+
+// === INIT MAP ===
+function initMap() {
+    map = L.map('map').setView([LVIV_LAT, LVIV_LON], 15);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+        attribution: '&copy; CartoDB'
+    }).addTo(map);
+
+    loadStops();
+    loadRoutes();
+    loadVehicles();
+
+    setInterval(updateVehiclePositions, 10000);
+}
+    
+
+// === LOAD STOPS ===
+function loadStops() {
+    fetch('/api/stops')
+        .then(res => res.json())
+        .then(data => {
+            stops = data;
+
+            data.forEach(stop => {
+                const [lat, lon] = convertCoord(stop.x, stop.y);
+
+                const marker = L.marker([lat, lon])
+                    .addTo(map)
+                    .on('click', () => showStopInfo(stop));
+
+                stopMarkers[stop.id] = marker;
+            });
+        });
+}
+
+
+// === LOAD ROUTES ===
+function loadRoutes() {
+    fetch('/api/routes')
+        .then(res => res.json())
+        .then(data => {
+            routes = data;
+
+            data.forEach(route => {
+                if (!route.stop_ids || route.stop_ids.length < 2) return;
+
+                const coords = route.stop_ids
+                    .map(id => {
+                        const stop = stops.find(s => s.id === id);
+                        return stop ? convertCoord(stop.x, stop.y) : null;
+                    })
+                    .filter(c => c !== null);
+
+                if (coords.length > 1) {
+                    const color =
+                        route.type === 'bus' ? 'blue' :
+                        route.type === 'tram' ? 'green' : 'orange';
+
+                    L.polyline(coords, { color, weight: 3, opacity: 0.7 })
+                        .addTo(map);
+                }
+            });
+        });
+}
+
+
+// === LOAD VEHICLES ===
+function loadVehicles() {
+    fetch('/api/transport')
+        .then(res => res.json())
+        .then(data => {
+            window.vehiclesList = {}; // глобальна таблиця транспортів
+
+data.forEach(vehicle => {
+    const icon = getVehicleIcon(vehicle.type);
+  const marker = L.marker([0, 0], { icon }); // без .addTo(map)
+    vehicleMarkers[vehicle.id] = marker;
+    vehiclesList[vehicle.id] = vehicle;
+});
+
+
+            updateVehiclePositions();
+        });
+}
+
+
+// === LIVE VEHICLE UPDATE ===
+function updateVehiclePositions() {
+    fetch('/api/transport/live')
+        .then(res => res.json())
+        .then(data => {
+            data.forEach(pos => {
+                const marker = vehicleMarkers[pos.vehicle_id];
+                if (!marker) return;
+
+                // оновлюємо тип (важливо для фільтрації!)
+                vehiclesList[pos.vehicle_id].type = pos.type;
+
+                const [lat, lon] = convertCoord(pos.x, pos.y);
+
+                marker.setLatLng([lat, lon]);
+                marker.setIcon(getVehicleIcon(pos.type));
+            });
+        });
+}
+
+
+
+// === VEHICLE ICON ===
+function getVehicleIcon(type) {
+    const symbol = type === 'bus' ? '🚌'
+        : type === 'tram' ? '🚊'
+        : '🚎';
+
+    return L.divIcon({
+        className: 'vehicle-icon',
+        html: `<div style="font-size: 26px;">${symbol}</div>`,
+        iconSize: [30, 30]
+    });
+}
+
+
+// === STOP INFO MODAL ===
+function showStopInfo(stop) {
+    currentStopInfo = stop;
+
+    const serving = routes.filter(r => r.stop_ids.includes(stop.id));
+
+    let html = `
+        <h5>${stop.name}</h5>
+        <p><b>Coordinates:</b> (${stop.x}, ${stop.y})</p>
+        <b>Serving routes:</b>
+        <ul>
+    `;
+
+    serving.forEach(r => html += `<li>${r.name} (${r.type})</li>`);
+    html += "</ul>";
+
+    document.getElementById("stopModalBody").innerHTML = html;
+    document.getElementById("stopModalTitle").textContent = stop.name;
+
+    new bootstrap.Modal(document.getElementById('stopModal')).show();
+}
+
+document.getElementById("showScheduleBtn").addEventListener("click", () => {
+    if (currentStopInfo) {
+        window.location.href = `/routes?stop=${currentStopInfo.id}`;
+    }
+});
+
+function filterVehicles(type) {
+    for (const id in vehicleMarkers) {
+        const marker = vehicleMarkers[id];
+        const vehicle = vehiclesList[id];
+
+        if (type === "all" || vehicle.type === type) {
+            map.addLayer(marker);  // показати
+        } else {
+            map.removeLayer(marker);  // сховати
+        }
+    }
+}
+
+
+
+// === START ===
+document.addEventListener('DOMContentLoaded', initMap);
+</script>
+{% endblock %}

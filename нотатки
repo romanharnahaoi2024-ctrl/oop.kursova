@@ -1,0 +1,24 @@
+
+
+cd C:\oop.kursova\backend_cpp
+rm -r build -Force
+mkdir build
+cd build
+cmake .. -G "Ninja"
+cmake --build .
+
+
+cd C:\oop.kursova\backend_cpp\build
+.\transport_backend.exe
+
+
+
+cd C:\oop.kursova\frontend_py
+pip install -r requirements.txt
+python app.py
+
+
+cd C:\oop.kursova\desktop_client
+pip install -r requirements.txt
+
+python main.py
