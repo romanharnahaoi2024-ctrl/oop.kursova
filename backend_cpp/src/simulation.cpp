@@ -89,7 +89,7 @@ void Simulation::simulationLoop() {
         
         if (paused_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue; // Пропускаємо оновлення, якщо пазуза
+            continue;
         }
         auto start_time = std::chrono::steady_clock::now();
         

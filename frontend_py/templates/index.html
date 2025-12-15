@@ -6,12 +6,15 @@
 <div class="row">
     <div class="col-12">
         <h2>Live Transport Map</h2>
-        <div class="mb-3 d-flex gap-2">
-    <button class="btn btn-primary" onclick="filterVehicles('all')">Всі</button>
-    <button class="btn btn-success" onclick="filterVehicles('bus')">Автобуси 🚌</button>
-    <button class="btn btn-warning" onclick="filterVehicles('tram')">Трамваї 🚊</button>
-    <button class="btn btn-info" onclick="filterVehicles('trolleybus')">Тролейбуси 🚎</button>
-</div>
+        <div class="mb-3 d-flex gap-2 flex-wrap">
+            <button class="btn btn-primary" onclick="filterVehicles('all')">Всі</button>
+            <button class="btn btn-success" onclick="filterVehicles('bus')">Автобуси 🚌</button>
+            <button class="btn btn-warning" onclick="filterVehicles('tram')">Трамваї 🚊</button>
+            <button class="btn btn-info" onclick="filterVehicles('trolleybus')">Тролейбуси 🚎</button>
+            <button id="simStartBtn" class="btn btn-danger" onclick="startSimulation()">▶ Запустити</button>
+            <button id="simStopBtn" class="btn btn-secondary" onclick="stopSimulation()" style="display:none;">⏸ Зупинити</button>
+            <span id="simStatus" class="badge bg-warning align-self-center">Затримано</span>
+        </div>
         <div id="map" style="height: 600px; width: 100%; border: 1px solid #ccc; border-radius: 8px;"></div>
     </div>
 </div>
@@ -70,7 +73,10 @@ let routes = [];
 let stopMarkers = {};
 let vehicleMarkers = {};
 let currentStopInfo = null;
-
+let simulationRunning = false;
+let updateInterval = null;
+let lastUpdateTime = 0;
+const MIN_UPDATE_INTERVAL = 1000;
 
 // === INIT MAP ===
 function initMap() {
@@ -83,8 +89,9 @@ function initMap() {
     loadStops();
     loadRoutes();
     loadVehicles();
-
-    setInterval(updateVehiclePositions, 10000);
+    checkSimulationStatus();
+    
+    updateInterval = setInterval(updateVehiclePositions, 2000);
 }
     
 
@@ -160,21 +167,90 @@ data.forEach(vehicle => {
 
 // === LIVE VEHICLE UPDATE ===
 function updateVehiclePositions() {
-    fetch('/api/transport/live')
-        .then(res => res.json())
+    const now = Date.now();
+    if (now - lastUpdateTime < MIN_UPDATE_INTERVAL) return;
+    lastUpdateTime = now;
+    
+    if (!simulationRunning) return;
+    
+    fetch('/api/transport/live', { cache: 'no-store' })
+        .then(res => {
+            if (!res.ok) throw new Error('Network response was not ok');
+            return res.json();
+        })
         .then(data => {
+            if (!Array.isArray(data) || data.length === 0) return;
+            
             data.forEach(pos => {
                 const marker = vehicleMarkers[pos.vehicle_id];
                 if (!marker) return;
 
-                // оновлюємо тип (важливо для фільтрації!)
                 vehiclesList[pos.vehicle_id].type = pos.type;
-
                 const [lat, lon] = convertCoord(pos.x, pos.y);
-
                 marker.setLatLng([lat, lon]);
                 marker.setIcon(getVehicleIcon(pos.type));
             });
+        })
+        .catch(err => console.log('Update error:', err));
+}
+
+// === УПРАВЛІННЯ СИМУЛЯЦІЄЮ ===
+function startSimulation() {
+    fetch('/api/simulation/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+    })
+    .then(res => res.json())
+    .then(() => {
+        simulationRunning = true;
+        updateSimulationUI();
+    })
+    .catch(err => console.error('Ошибка запуска:', err));
+}
+
+function stopSimulation() {
+    fetch('/api/simulation/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' })
+    })
+    .then(res => res.json())
+    .then(() => {
+        simulationRunning = false;
+        updateSimulationUI();
+    })
+    .catch(err => console.error('Ошибка остановки:', err));
+}
+
+function updateSimulationUI() {
+    const startBtn = document.getElementById('simStartBtn');
+    const stopBtn = document.getElementById('simStopBtn');
+    const statusBadge = document.getElementById('simStatus');
+    
+    if (simulationRunning) {
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        statusBadge.textContent = '▶ Працює';
+        statusBadge.className = 'badge bg-success';
+    } else {
+        startBtn.style.display = 'block';
+        stopBtn.style.display = 'none';
+        statusBadge.textContent = '⏸ Затримано';
+        statusBadge.className = 'badge bg-warning';
+    }
+}
+
+function checkSimulationStatus() {
+    fetch('/api/simulation/status')
+        .then(res => res.json())
+        .then(data => {
+            simulationRunning = data.running || false;
+            updateSimulationUI();
+        })
+        .catch(() => {
+            simulationRunning = false;
+            updateSimulationUI();
         });
 }
 
@@ -239,5 +315,9 @@ function filterVehicles(type) {
 
 // === START ===
 document.addEventListener('DOMContentLoaded', initMap);
+
+window.addEventListener('beforeunload', () => {
+    if (updateInterval) clearInterval(updateInterval);
+});
 </script>
 {% endblock %}

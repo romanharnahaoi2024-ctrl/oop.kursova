@@ -2,6 +2,8 @@ import sys
 import os
 import json
 import requests
+import concurrent.futures
+from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QListWidget, 
                                QListWidgetItem, QSplitter, QGroupBox, QSpinBox,
@@ -9,7 +11,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QIcon
-from datetime import datetime
 from PySide6.QtWidgets import (QTextEdit, QFormLayout, QLineEdit, QComboBox)    
 
 # Backend API URL
@@ -25,7 +26,8 @@ class TransportDesktopApp(QMainWindow):
         self.vehicle_positions = []
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.updateLiveData)
-        self.update_interval = 2000  # 2 seconds
+        self.update_interval = 1000  # 1 сек (оптимізація)
+        self.simulation_start_time = None
         
         self.initUI()
         self.loadInitialData()
@@ -297,41 +299,39 @@ class TransportDesktopApp(QMainWindow):
         self.map_view.setHtml(html_content)
     
     def loadInitialData(self):
-        """Load initial data from backend"""
+        """Load initial data from backend (optimized)"""
         try:
             self.status_label.setText("Loading...")
             
-            # Load stops
-            response = requests.get(f"{BACKEND_URL}/api/stops", timeout=5)
-            if response.status_code == 200:
-                self.stops = response.json()
-            else:
-                self.showError("Failed to load stops")
-                return
+            # Паралельне завантаження для прискорення
+            import concurrent.futures
             
-            # Load routes
-            response = requests.get(f"{BACKEND_URL}/api/routes", timeout=5)
-            if response.status_code == 200:
-                self.routes = response.json()
-                self.updateRoutesList()
-            else:
-                self.showError("Failed to load routes")
-                return
+            def load_stops():
+                return requests.get(f"{BACKEND_URL}/api/stops", timeout=5).json()
             
-            # Load vehicles
-            response = requests.get(f"{BACKEND_URL}/api/transport", timeout=5)
-            if response.status_code == 200:
-                self.vehicles = response.json()
-                self.updateAdminTable()
-            else:
-                self.showError("Failed to load vehicles")
-                return
-
+            def load_routes():
+                return requests.get(f"{BACKEND_URL}/api/routes", timeout=5).json()
+            
+            def load_vehicles():
+                return requests.get(f"{BACKEND_URL}/api/transport", timeout=5).json()
+            
+            # Виконуємо запити паралельно
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                stops_future = executor.submit(load_stops)
+                routes_future = executor.submit(load_routes)
+                vehicles_future = executor.submit(load_vehicles)
+                
+                self.stops = stops_future.result()
+                self.routes = routes_future.result()
+                self.vehicles = vehicles_future.result()
+            
+            self.updateRoutesList()
+            self.updateAdminTable()
             self.updateLiveData()
             self.drawRoutesOnMap()
             self.status_label.setText("Connected")
             
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             self.showError(f"Connection error: {str(e)}")
             self.status_label.setText("Disconnected")
     

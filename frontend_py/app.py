@@ -74,7 +74,22 @@ def api_transport_live():
         return jsonify(data)
     return jsonify([]), 500
 
-@app.route('/api/admin/stop', methods=['POST'])
+@app.route('/api/simulation/status')
+def api_simulation_status():
+    """Get simulation status"""
+    data = call_backend('/api/simulation/status')
+    if data is not None:
+        return jsonify(data)
+    return jsonify({'running': False, 'paused': True}), 500
+
+@app.route('/api/simulation/control', methods=['POST'])
+def api_simulation_control():
+    """Control simulation (start/stop)"""
+    data = request.get_json()
+    result = call_backend('/api/simulation/control', method='POST', data=data)
+    if result is not None:
+        return jsonify(result)
+    return jsonify({'error': 'Failed to control simulation'}), 500
 def api_admin_stop():
     """Create or update a stop"""
     data = request.get_json()

@@ -18,15 +18,21 @@ APIServer::~APIServer() {
 void APIServer::setupRoutes() {
     httplib::Server* svr = server_;
     
-    // Enable CORS
+    // Enable CORS та Content-Encoding
     svr->set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type"}
+        {"Access-Control-Allow-Headers", "Content-Type"},
+        {"Cache-Control", "no-cache, max-age=0"}
+    });
+    
+    svr->set_post_routing_handler([](const httplib::Request&, httplib::Response&) {
+        return httplib::Server::HandlerResponse::Handled;
     });
     
     // Handle OPTIONS requests
     svr->Options(".*", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 204;
         return;
     });
     
@@ -171,15 +177,29 @@ void APIServer::setupRoutes() {
             std::string action = body["action"];
             
             if (action == "start") {
-                sim_->resume(); // Зняти з паузи
+                sim_->resume();
             } else if (action == "stop") {
-                sim_->pause();  // Поставити на паузу
+                sim_->pause();
             }
             
             res.set_content(jsonSuccess(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
             res.set_content(jsonError(e.what()), "application/json");
+        }
+    });
+    
+    // GET /api/simulation/status
+    svr->Get("/api/simulation/status", [this](const httplib::Request&, httplib::Response& res) {
+        try {
+            json j = {
+                {"running", sim_->isRunning()},
+                {"paused", sim_->isPaused()}
+            };
+            res.set_content(j.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(jsonError(e.what(), 500), "application/json");
         }
     });
     
